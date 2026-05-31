@@ -307,17 +307,13 @@ with tab1:
                     badge_class = "badge-safe"
                     color_accent = "#10b981"
                     
-                    if result["risk_level"] == "Suspicious":
+                    if result["risk_level"] == "Suspicious / Medium Risk":
                         risk_class = "risk-suspicious"
                         badge_class = "badge-secondary"
                         color_accent = "#f59e0b"
                     elif result["risk_level"] == "High Risk":
                         risk_class = "risk-high"
                         badge_class = "badge-high"
-                        color_accent = "#ef4444"
-                    elif result["risk_level"] == "Critical":
-                        risk_class = "risk-critical"
-                        badge_class = "badge-critical"
                         color_accent = "#ef4444"
                         
                     # Create Plotly Gauge for Score
@@ -334,9 +330,8 @@ with tab1:
                             'bordercolor': "rgba(255,255,255,0.1)",
                             'steps': [
                                 {'range': [0, 30], 'color': 'rgba(16, 185, 129, 0.15)'},
-                                {'range': [30, 55], 'color': 'rgba(245, 158, 11, 0.15)'},
-                                {'range': [55, 80], 'color': 'rgba(239, 68, 68, 0.15)'},
-                                {'range': [80, 100], 'color': 'rgba(185, 28, 28, 0.25)'}
+                                {'range': [30, 65], 'color': 'rgba(245, 158, 11, 0.15)'},
+                                {'range': [65, 100], 'color': 'rgba(239, 68, 68, 0.15)'}
                             ],
                             'threshold': {
                                 'line': {'color': "#ffffff", 'width': 4},
@@ -381,6 +376,22 @@ with tab1:
                             <p style='line-height: 1.6; font-size: 1.05em;'>{result["explanation"]}</p>
                         </div>
                     """, unsafe_allow_html=True)
+                    
+                    # Diagnostics explainer panel
+                    if "diagnostics" in result:
+                        diag = result["diagnostics"]
+                        st.markdown(f"""
+                            <div class='cyber-card' style='border-left: 5px solid #a855f7;'>
+                                <h4 style='color: #a855f7; margin-top: 0px;'>🔬 Structured Security Diagnostics</h4>
+                                <p style='margin-bottom: 8px;'><b>Decision Basis:</b> {diag["decision_reason"]}</p>
+                                <p style='margin-bottom: 0px;'><b>Threat Score Contributions:</b></p>
+                                <ul style='margin-top: 4px; margin-bottom: 0px;'>
+                                    <li>Rules Engine Weighted Score: <b>{diag["score_contributions"]["rules_score"]}</b></li>
+                                    <li>ML Model Probability Score: <b>{diag["score_contributions"]["ml_score"]}</b></li>
+                                    <li>Fused Security Severity: <b>{diag["score_contributions"]["final_score"]} / 100</b></li>
+                                </ul>
+                            </div>
+                        """, unsafe_allow_html=True)
                     
                     # Red Flags and Tactics
                     st.markdown("#### 🚩 Highlighted Scam Indicators & Manipulation Tactics:")

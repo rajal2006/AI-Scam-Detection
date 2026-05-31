@@ -41,6 +41,7 @@ RULES_DATABASE = {
         (r"(?i)no[\s\-]?credit[\s\-]?check|zero[\s\-]?cibil", "Loan approval with 'no credit check' / 'low CIBIL score ok'"),
         (r"(?i)processing[\s\-]?fee[\s\-]?first|advance[\s\-]?fee", "Requesting advance processing/administrative fees before loan disbursement"),
         (r"(?i)bina[\s\-]?document|no[\s\-]?documents[\s\-]?required", "Loans requiring no verification documents"),
+        (r"(?i)easy[\s\-]?loan|personal[\s\-]?loan", "Easy personal loan advertisement"),
         # Hinglish / Hindi / Gujarati
         (r"(?i)turant[\s\-]?loan|sasta[\s\-]?loan", "Hinglish: Fast/cheap loan advertisements"),
         (r"(?i)ધિરાણ|લોન[\s\-]?મંજૂર|વ્યાજ[\s\-]?વગર", "Gujarati Script: Free loans or zero interest loans"),
@@ -57,7 +58,7 @@ RULES_DATABASE = {
     ],
     "Romance Scam": [
         (r"(?i)send[\s\-]?money[\s\-]?for[\s\-]?medical|medical[\s\-]?emergency[\s\-]?help", "Unseen online companion asking for money under medical emergency pretext"),
-        (r"(?i)stuck[\s\-]?at[\s\-]?airport|custom[\s\-]?duty[\s\-]?fees", "Claiming to send a valuable gift box, now stuck at customs requiring fees"),
+        (r"(?i)stuck[\s\-]?at[\s\-]?airport|stuck.*customs|custom[\s\-]?duty[\s\-]?fees|customs[\s\-]?tracker", "Claiming to send a valuable gift box, now stuck at customs requiring fees"),
         (r"(?i)buy[\s\-]?me[\s\-]?gift|gift[\s\-]?card[\s\-]?code", "Requests for steam, amazon, or Apple gift card codes from online lovers"),
         (r"(?i)marry[\s\-]?you|love[\s\-]?you[\s\-]?so[\s\-]?much", "Intense romantic declarations in very short order to build codependency"),
     ],
@@ -71,8 +72,8 @@ RULES_DATABASE = {
         (r"(?i)verify[\s\-]?your[\s\-]?account|account[\s\-]?(suspended|blocked)", "Urgent account verification or suspension warning"),
         (r"(?i)click[\s\-]?link[\s\-]?to[\s\-]?unlock", "Suspicious directives to click link to unlock accounts"),
         (r"(?i)kyc[\s\-]?pending|kyc[\s\-]?update|pancard[\s\-]?link", "KYC update requests linking PAN cards or Aadhaar cards (highly common bank phishing)"),
-        (r"(?i)update[\s\-]?bank[\s\-]?details|netbanking[\s\-]?expired", "Request to update netbanking details urgently"),
-        (r"(?i)re-verify|reverify", "Security alerts requiring re-verification of personal details"),
+        (r"(?i)update[\s\-]?bank[\s\-]?details|netbanking.*expired|profile.*expired|profile[\s\-]?has[\s\-]?expired", "Request to update netbanking details urgently"),
+        (r"(?i)re-verify|reverify|username.*password", "Security alerts requiring re-verification of personal credentials"),
     ],
     "OTP / Account Takeover Scam": [
         (r"(?i)share[\s\-]?otp", "Request to share OTP"),
@@ -152,7 +153,7 @@ def check_otp_request(text: str) -> bool:
     # Action verbs (including Hinglish/Gujlish)
     action_verbs = [
         r"share", r"send", r"forward", r"tell", r"provide", r"give",
-        r"batao", r"bhejo", r"aapo", r"moklo"
+        r"batao", r"bhejo", r"aapo", r"moklo", r"text", r"whatsapp", r"msg", r"message"
     ]
     
     # Check if any OTP noun exists
@@ -204,150 +205,238 @@ def check_otp_request(text: str) -> bool:
         
     return False
 
+def get_rule_weight_and_tier(category: str, description: str, text: str = "") -> tuple:
+    """
+    Returns (tier, weight, risk_factor_name) for a matched rule indicator.
+    Tiers: "Low Risk", "Suspicious / Medium Risk", "High Risk"
+    Weights: Low = 10, Medium = 30, High = 70
+    """
+    combined = f"{category} {description}".lower()
+    text_lower = text.lower() if text else ""
+    
+    # 1. High Risk Indicators (Weight = 70)
+    # - OTP requests
+    if category == "OTP / Account Takeover Scam" and check_otp_request(text_lower):
+        return "High Risk", 70, "OTP request / Account Takeover attempt"
+        
+    # - Password/private key requests
+    if any(k in combined for k in ["seed phrase", "private key", "password request"]):
+        return "High Risk", 70, "Password / Cryptographic seed phrase request"
+        
+    # - Bank credential requests
+    if any(k in combined for k in ["bank credential", "atm pin", "card verification", "credit card info", "cvv"]):
+        return "High Risk", 70, "Bank credential / Card verification request"
+        
+    # - UPI payment demands
+    if category == "UPI Scam" or any(k in combined for k in ["upi pin", "upi pin daalo", "pin type karo"]):
+        return "High Risk", 70, "UPI PIN / Payment demand"
+        
+    # - KYC scams
+    if any(k in combined for k in ["kyc pending", "kyc update", "pancard link", "aadhaar"]):
+        return "High Risk", 70, "KYC / Identity link scam"
+        
+    # - Account suspension threats
+    if any(k in combined for k in ["suspended", "blocked", "block hone", "netbanking expired"]):
+        return "High Risk", 70, "Account suspension / Blocking threat"
+        
+    # - Impersonation scams (Authority Impersonation, bank executives, support helpdesks asking for Anydesk/Teamviewer)
+    if "impersonat" in combined or "anydesk" in combined or "teamviewer" in combined or "rustdesk" in combined:
+        return "High Risk", 70, "Impersonation / Remote access request"
+        
+    # 2. Medium Risk Indicators (Weight = 30)
+    # - Prize/lottery claims
+    if category == "Lottery Scam" or "won" in combined or "lucky draw" in combined or "lottery" in combined:
+        return "Suspicious / Medium Risk", 30, "Prize / Lottery claim promotion"
+        
+    # - Investment promotions
+    if category in ["Investment Scam", "Crypto Scam"] or "double money" in combined or "guaranteed return" in combined or "nivesh" in combined or "rokan" in combined:
+        return "Suspicious / Medium Risk", 30, "Unrealistic Investment promotion"
+        
+    # - Too-good-to-be-true offers (Job scams WFH, Shopping sales 90% off)
+    if category in ["Job Scam", "Shopping Scam"] or "90% off" in combined or "95% off" in combined or "clearance sale" in combined or "work from home" in combined:
+        return "Suspicious / Medium Risk", 30, "Too-good-to-be-true offer"
+        
+    # - Urgency/pressure tactics
+    if category == "Urgency / Pressure":
+        return "Suspicious / Medium Risk", 30, "Urgent action pressure tactic"
+        
+    # - Secrecy/isolation tactics or Romance scam emotional manipulation
+    if category in ["Romance Scam", "Secrecy / Isolation"]:
+        return "Suspicious / Medium Risk", 30, "Emotional manipulation / Isolation pressure"
+
+    # 3. Low Risk Indicators (Weight = 10)
+    # - Meeting reminders
+    if any(k in text_lower for k in ["meeting", "zoom link", "standup", "appointment"]):
+        return "Low Risk", 10, "Meeting or Appointment reminder"
+        
+    # - Transaction alerts (genuine, e.g. "Your account has been debited/credited")
+    if any(k in text_lower for k in ["debited", "credited", "transaction alert", "bill generated", "subscription will auto-renew"]):
+        return "Low Risk", 10, "Genuine transaction/billing alert"
+        
+    # - Delivery updates (genuine, e.g. order shipped/delivered)
+    if any(k in text_lower for k in ["shipped", "packed", "delivered"]):
+        return "Low Risk", 10, "Genuine delivery update"
+        
+    # - Genuine OTP notification (OTP keyword or warning, but NOT an active request to share)
+    if "otp" in text_lower or "verification code" in text_lower or "login code" in text_lower:
+        # Since it didn't match the high risk OTP request above, it's a notification/alert
+        return "Low Risk", 10, "Genuine OTP / Login notification"
+        
+    # - Default for benign matched text in "Safe" category
+    if category == "Safe":
+        return "Low Risk", 10, "Normal conversation"
+
+    # Default fallback
+    return "Suspicious / Medium Risk", 20, "Unclassified suspicious signal"
+
 def get_indicator_severity(category: str, description: str) -> str:
     """
     Dynamically maps a matched rule/indicator to a severity level:
-    Critical, High, Medium, or Low.
+    Low, Medium, or High.
     """
-    combined = f"{category} {description}".lower()
-    
-    # Critical indicators
-    if any(k in combined for k in [
-        "seed phrase", "private key", "otp", "one time password", "one-time password",
-        "upi pin", "upi-pin", "pin daalo", "anydesk", "teamviewer", "rustdesk"
-    ]):
-        return "Critical"
-        
-    # High indicators
-    if any(k in combined for k in [
-        "suspend", "block", "lottery", "won", "double money", "guaranteed return",
-        "guaranteed profit", "processing fee", "advance fee", "tax clearance", "phishing",
-        "impersonate", "impersonation", "spoof", "typosquatting", "urgent verification"
-    ]):
-        return "High"
-        
-    # Medium indicators
-    if any(k in combined for k in [
-        "part-time", "part time", "work from home", "loan", "cibil", "90% off", "95% off",
-        "clearance sale", "cheap", "discount", "scratch card", "verify code on call"
-    ]):
+    tier, _, _ = get_rule_weight_and_tier(category, description)
+    if tier == "Suspicious / Medium Risk":
         return "Medium"
-        
-    # Low indicators
-    return "Low"
+    elif tier == "Low Risk":
+        return "Low"
+    elif tier == "High Risk":
+        return "High"
+    return "Medium"
 
 def analyze_text_rules(text: str) -> Dict[str, Any]:
     """
     Scans the given input text against the regex rules database.
-    Returns:
-        A dict containing:
-        - rule_scam_score: score from 0 to 100 based on hits and severity
-        - risk_level: calculated risk string
-        - primary_rule_category: categorized type or 'Safe'
-        - red_flags: list of matched descriptions
-        - manipulation_tactics: list of matched manipulation descriptions
+    Calculates weighted rule score, risk tier, and structured indicators.
     """
-    if not text or not isinstance(text, str):
+    if not text or not isinstance(text, str) or len(text.strip()) == 0:
         return {
             "rule_scam_score": 0,
-            "risk_level": "Safe",
-            "primary_rule_category": "Unknown Scam",
-            "red_flags": [],
-            "manipulation_tactics": []
+            "risk_level": "Low Risk",
+            "primary_rule_category": "Safe",
+            "indicators": [],
+            "red_flags": []
         }
 
-    red_flags = []
-    manipulation_tactics = []
+    matched_indicators = []
     category_hits = {cat: 0 for cat in RULES_DATABASE.keys()}
     
-    # Check category rules
+    text_lower = text.lower()
+
+    # 1. Check if it's an active OTP Request
+    is_otp_req = check_otp_request(text)
+    if is_otp_req:
+        matched_indicators.append({
+            "name": "Active OTP / Verification code request",
+            "tier": "High Risk",
+            "weight": 70,
+            "category": "OTP / Account Takeover Scam"
+        })
+        category_hits["OTP / Account Takeover Scam"] += 1
+    elif any(re.search(pat, text_lower) for pat in [r"\botp\b", r"verification[\s\-]?code", r"security[\s\-]?code", r"login[\s\-]?code"]):
+        # Genuine OTP notification / warning
+        matched_indicators.append({
+            "name": "Genuine OTP / Login notification",
+            "tier": "Low Risk",
+            "weight": 10,
+            "category": "Safe"
+        })
+        
+    # 2. Check general database rules
     for category, rules in RULES_DATABASE.items():
+        # Avoid double-counting OTP request / warning if already handled
+        if category == "OTP / Account Takeover Scam":
+            continue
+            
         for pattern, description in rules:
             if re.search(pattern, text):
-                category_hits[category] += 1
-                severity = get_indicator_severity(category, description)
-                flag_str = f"[{severity}] {category}: {description}"
-                if flag_str not in red_flags:
-                    red_flags.append(flag_str)
+                tier, weight, factor_name = get_rule_weight_and_tier(category, description, text)
+                # Avoid adding duplicates of the same factor
+                if not any(ind["name"] == factor_name for ind in matched_indicators):
+                    matched_indicators.append({
+                        "name": factor_name,
+                        "tier": tier,
+                        "weight": weight,
+                        "category": category
+                    })
+                    category_hits[category] += 1
 
-    # Check general manipulation patterns
+    # 3. Check manipulation tactics
     for tactic, rules in MANIPULATION_RULES.items():
         for pattern, description in rules:
             if re.search(pattern, text):
-                severity = get_indicator_severity(tactic, description)
-                tactic_str = f"[{severity}] {tactic}: {description}"
-                if tactic_str not in manipulation_tactics:
-                    manipulation_tactics.append(tactic_str)
-                
-    # Minimum score targets based on threats
-    min_score = 0
-    score_boost = 0
-    
-    # 1. OTP requests
-    if check_otp_request(text):
-        min_score = max(min_score, 85)
-        category_hits["OTP / Account Takeover Scam"] += 1
-        otp_flag = "[Critical] OTP / Account Takeover Scam: Detected request to share one-time password or verification code"
-        if otp_flag not in red_flags:
-            red_flags.append(otp_flag)
-        
-    # 2. UPI/PIN/Crypto seeds
-    if any(re.search(pat, text.lower()) for pat in [r"upi[\s\-]?pin", r"pin[\s\-]?daalo", r"seed[\s\-]?phrase", r"private[\s\-]?key"]):
-        min_score = max(min_score, 85)
-        
-    # 3. Phishing links / Account suspension
-    if any(re.search(pat, text.lower()) for pat in [r"verify[\s\-]?your[\s\-]?account", r"suspended", r"blocked", r"kyc[\s\-]?pending", r"kyc[\s\-]?update"]):
-        min_score = max(min_score, 70)
-        
-    # 4. Lottery claims
-    if any(re.search(pat, text.lower()) for pat in [r"lucky[\s\-]?draw", r"lottery[\s\-]?winner", r"you[\s\-]?won", r"kbc[\s\-]?lottery"]):
-        min_score = max(min_score, 65)
-        
-    # 5. Remote tools
-    if any(re.search(pat, text.lower()) for pat in [r"anydesk", r"teamviewer", r"rustdesk"]):
-        min_score = max(min_score, 80)
-        
-    # 6. Job fees / advance fees
-    if any(re.search(pat, text.lower()) for pat in [r"processing[\s\-]?fee", r"advance[\s\-]?fee", r"registration[\s\-]?fee"]):
-        min_score = max(min_score, 60)
-        
-    # 7. Urgency / pressure / manipulation tactics
-    has_urgency = any(re.search(pattern, text) for pattern, _ in MANIPULATION_RULES["Urgency / Pressure"])
-    has_manipulation = len(manipulation_tactics) > 0
-    if has_urgency or has_manipulation:
-        score_boost += 20
-        min_score = max(min_score, 35)
+                tier, weight, factor_name = get_rule_weight_and_tier(tactic, description, text)
+                if not any(ind["name"] == factor_name for ind in matched_indicators):
+                    matched_indicators.append({
+                        "name": factor_name,
+                        "tier": tier,
+                        "weight": weight,
+                        "category": tactic
+                    })
 
-    # Calculate score
-    total_hits = sum(category_hits.values())
-    manipulation_hits = len(manipulation_tactics)
-    base_score = (total_hits * 20) + (manipulation_hits * 15) + score_boost
-    rule_scam_score = min(max(base_score, min_score), 100)
-    
-    # Categorization based on hits
-    if total_hits > 0:
+    # 4. Check for transaction alerts, meeting reminders, etc., if no other threats are detected
+    if not any(ind["tier"] == "High Risk" for ind in matched_indicators):
+        # Check transaction alert
+        if any(k in text_lower for k in ["debited", "credited", "transaction alert", "bill generated", "subscription will auto-renew", "anniversary"]):
+            if not any(ind["name"] == "Genuine transaction/billing alert" for ind in matched_indicators):
+                matched_indicators.append({
+                    "name": "Genuine transaction/billing alert",
+                    "tier": "Low Risk",
+                    "weight": 10,
+                    "category": "Safe"
+                })
+        # Check meeting reminder
+        if any(k in text_lower for k in ["meeting", "zoom link", "standup", "appointment", "schedule"]):
+            if not any(ind["name"] == "Meeting or Appointment reminder" for ind in matched_indicators):
+                matched_indicators.append({
+                    "name": "Meeting or Appointment reminder",
+                    "tier": "Low Risk",
+                    "weight": 10,
+                    "category": "Safe"
+                })
+        # Check delivery update
+        if any(k in text_lower for k in ["shipped", "packed", "delivered"]):
+            if not any(ind["name"] == "Genuine delivery update" for ind in matched_indicators):
+                matched_indicators.append({
+                    "name": "Genuine delivery update",
+                    "tier": "Low Risk",
+                    "weight": 10,
+                    "category": "Safe"
+                })
+
+    # Calculate rule score as sum of weights of matched indicators
+    # Cap score at 100
+    rule_scam_score = sum(ind["weight"] for ind in matched_indicators)
+    rule_scam_score = min(max(rule_scam_score, 0), 100)
+
+    # Determine primary category
+    if is_otp_req:
+        primary_rule_category = "OTP / Account Takeover Scam"
+    elif sum(category_hits.values()) > 0:
         primary_rule_category = max(category_hits, key=category_hits.get)
     else:
-        primary_rule_category = "Unknown Scam" if rule_scam_score >= 30 else "Safe"
-        
-    # Risk Level mapping
+        primary_rule_category = "Safe" if rule_scam_score < 30 else "Unknown Scam"
+
+    # Redesign thresholds using the 3-level scale:
+    # - Low Risk: score < 30
+    # - Suspicious / Medium Risk: 30 <= score < 65
+    # - High Risk: score >= 65
     if rule_scam_score < 30:
-        risk_level = "Safe"
-    elif rule_scam_score < 55:
-        risk_level = "Suspicious"
-    elif rule_scam_score < 80:
-        risk_level = "High Risk"
-    else:
-        risk_level = "Critical"
-        
-    # Ensure category makes sense based on score
-    if rule_scam_score < 30:
+        risk_level = "Low Risk"
         primary_rule_category = "Safe"
-        
+    elif rule_scam_score < 65:
+        risk_level = "Suspicious / Medium Risk"
+    else:
+        risk_level = "High Risk"
+
+    # Create formatted red flags for backwards compatibility
+    red_flags = []
+    for ind in matched_indicators:
+        red_flags.append(f"[{ind['tier']}] {ind['name']} (Score Contribution: +{ind['weight']})")
+
     return {
         "rule_scam_score": int(rule_scam_score),
         "risk_level": risk_level,
         "primary_rule_category": primary_rule_category,
-        "red_flags": red_flags,
-        "manipulation_tactics": manipulation_tactics
+        "indicators": matched_indicators,
+        "red_flags": red_flags
     }

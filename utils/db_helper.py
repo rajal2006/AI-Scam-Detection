@@ -70,7 +70,7 @@ def get_analytics_summary() -> Dict[str, Any]:
             cursor = conn.cursor()
             
             # 1. Basic Stats
-            cursor.execute("SELECT COUNT(*), AVG(scam_score), SUM(CASE WHEN risk_level IN ('High Risk', 'Critical') THEN 1 ELSE 0 END) FROM scan_logs")
+            cursor.execute("SELECT COUNT(*), AVG(scam_score), SUM(CASE WHEN risk_level = 'High Risk' THEN 1 ELSE 0 END) FROM scan_logs")
             total_scans, avg_score, high_risk_count = cursor.fetchone()
             
             total_scans = total_scans or 0
@@ -159,18 +159,18 @@ def populate_mock_data(conn):
     """Generates realistic scan records for the past 7 days."""
     categories = [
         ("Job Scam", 75, "High Risk", "Work from home task click youtube video links"),
-        ("UPI Scam", 85, "Critical", "Scan this QR code and type your UPI PIN to claim cashback"),
-        ("OTP / Account Takeover Scam", 90, "Critical", "Please share the OTP you just received from your bank"),
-        ("Phishing", 80, "Critical", "Your netbanking account is suspended. Verify KYC here: hdfc-login.xyz"),
+        ("UPI Scam", 85, "High Risk", "Scan this QR code and type your UPI PIN to claim cashback"),
+        ("OTP / Account Takeover Scam", 90, "High Risk", "Please share the OTP you just received from your bank"),
+        ("Phishing", 80, "High Risk", "Your netbanking account is suspended. Verify KYC here: hdfc-login.xyz"),
         ("Lottery Scam", 70, "High Risk", "KBC Lucky draw won 25 Lakhs. Pay tax processing fees"),
         ("Investment Scam", 65, "High Risk", "Double your capital in one day. Guaranteed returns on Telegram"),
-        ("Customer Support Scam", 85, "Critical", "Tech Support executive calling, please install AnyDesk remote access"),
-        ("Shopping Scam", 50, "Suspicious", "iPhone 15 Pro Max for just 2999. Today clearout sale"),
-        ("Romance Scam", 60, "High Risk", "I am in Delhi customs airport airport, send money for medical check"),
+        ("Customer Support Scam", 85, "High Risk", "Tech Support executive calling, please install AnyDesk remote access"),
+        ("Shopping Scam", 50, "Suspicious / Medium Risk", "iPhone 15 Pro Max for just 2999. Today clearout sale"),
+        ("Romance Scam", 60, "Suspicious / Medium Risk", "I am in Delhi customs airport airport, send money for medical check"),
         ("Crypto Scam", 75, "High Risk", "USDT secure deposit, input your MetaMask private seed phrase"),
-        ("Safe", 10, "Safe", "Hello dad, please transfer the grocery money. Thanks"),
-        ("Safe", 5, "Safe", "Hi, the team alignment call is rescheduled to 3 PM tomorrow. See you"),
-        ("Safe", 12, "Safe", "Your one-time login passcode is 392019. Do not share.")
+        ("Safe", 10, "Low Risk", "Hello dad, please transfer the grocery money. Thanks"),
+        ("Safe", 5, "Low Risk", "Hi, the team alignment call is rescheduled to 3 PM tomorrow. See you"),
+        ("Safe", 12, "Low Risk", "Your one-time login passcode is 392019. Do not share.")
     ]
     
     input_types = ["Direct Text", "WhatsApp Chat", "Screenshot OCR", "URL Link", "Voice Transcript", "Email Content"]
@@ -196,13 +196,11 @@ def populate_mock_data(conn):
         
         # Recalculate risk level to match score
         if score < 30:
-            risk_lvl = "Safe"
-        elif score < 55:
-            risk_lvl = "Suspicious"
-        elif score < 80:
-            risk_lvl = "High Risk"
+            risk_lvl = "Low Risk"
+        elif score < 65:
+            risk_lvl = "Suspicious / Medium Risk"
         else:
-            risk_lvl = "Critical"
+            risk_lvl = "High Risk"
             
         conf = random.randint(70, 99)
         inp_type = random.choice(input_types)

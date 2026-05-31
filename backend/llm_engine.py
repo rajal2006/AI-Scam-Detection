@@ -57,10 +57,9 @@ You MUST respond ONLY with a valid JSON block, using this exact format:
 }
 
 Scam Score criteria:
-- 0-29: Safe
-- 30-54: Suspicious
-- 55-79: High Risk
-- 80-100: Critical
+- 0-29: Low Risk
+- 30-64: Suspicious / Medium Risk
+- 65-100: High Risk
 
 Make your response a valid JSON. Do not include any markdown fences except if necessary, but keep the JSON clean so it can be parsed with json.loads(). Ensure 'red_flags', 'recommendations', and 'explanation' are fully filled out."""
 
@@ -123,7 +122,7 @@ def get_local_fallback_analysis(text: str) -> Dict[str, Any]:
     risk = rules_res["risk_level"]
     category = rules_res["primary_rule_category"]
     
-    red_flags = rules_res["red_flags"] + rules_res["manipulation_tactics"]
+    red_flags = rules_res["red_flags"]
     
     # Generic safety recommendations based on classification category
     recommendations = [

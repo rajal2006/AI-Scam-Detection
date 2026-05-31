@@ -49,7 +49,7 @@ SCAM_CATEGORIES = [
     "Unknown Scam"
 ]
 
-RISK_LEVELS = ["Safe", "Suspicious", "High Risk", "Critical"]
+RISK_LEVELS = ["Low Risk", "Suspicious / Medium Risk", "High Risk"]
 
 # API configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
